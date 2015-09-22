@@ -11,7 +11,7 @@ env:
   global:
     - JRUBY_OPTS='-J-Xmx1024M'
   matrix:
-    - "GEM=railties"
+    - "GEM=ap"
 rvm:
   - 2.2.3
 matrix:
