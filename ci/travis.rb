@@ -61,7 +61,7 @@ class Build
     if activerecord?
       ['db:mysql:rebuild', "#{adapter}:#{'isolated_' if isolated?}test"]
     else
-      ["test"].compact.join(":")
+      ["test", ('isolated' if isolated?)].compact.join(":")
     end
   end
 
