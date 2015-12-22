@@ -16,7 +16,7 @@ rvm:
   - 2.2.3
 matrix:
   allow_failures:
-    - env: "GEM=ar:mysql"
+    - "GEM=am,amo,as,av,aj"
     - rvm: ruby-head
   fast_finish: true
 notifications:
