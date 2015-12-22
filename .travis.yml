@@ -11,12 +11,11 @@ env:
   global:
     - JRUBY_OPTS='-J-Xmx1024M'
   matrix:
-    - "GEM=ap"
+    - "GEM=am,amo,as,av,aj"
 rvm:
   - 2.2.3
 matrix:
   allow_failures:
-    - "GEM=am,amo,as,av,aj"
     - rvm: ruby-head
   fast_finish: true
 notifications:
