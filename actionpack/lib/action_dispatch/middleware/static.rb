@@ -1,10 +1,10 @@
-require 'rack/utils'
-require 'active_support/core_ext/uri'
+require "rack/utils"
+require "active_support/core_ext/uri"
 
 module ActionDispatch
   # This middleware returns a file's contents from disk in the body response.
-  # When initialized, it can accept an optional 'Cache-Control' header, which
-  # will be set when a response containing a file's contents is delivered.
+  # When initialized, it can accept optional HTTP headers, which will be set
+  # when a response containing a file's contents is delivered.
   #
   # This middleware will render the file specified in `env["PATH_INFO"]`
   # where the base path is in the +root+ directory. For example, if the +root+
@@ -13,12 +13,10 @@ module ActionDispatch
   # located at `public/assets/application.js` if the file exists. If the file
   # does not exist, a 404 "File not Found" response will be returned.
   class FileHandler
-    def initialize(root, cache_control, index: 'index')
-      @root          = root.chomp('/')
-      @compiled_root = /^#{Regexp.escape(root)}/
-      headers        = cache_control && { 'Cache-Control' => cache_control }
-      @file_server = ::Rack::File.new(@root, headers)
-      @index = index
+    def initialize(root, index: "index", headers: {})
+      @root          = root.chomp("/")
+      @file_server   = ::Rack::File.new(@root, headers)
+      @index         = index
     end
 
     # Takes a path to a file. If the file is found, has valid encoding, and has
@@ -29,13 +27,13 @@ module ActionDispatch
     # in the server's `public/` directory (see Static#call).
     def match?(path)
       path = ::Rack::Utils.unescape_path path
-      return false unless path.valid_encoding?
-      path = Rack::Utils.clean_path_info path
+      return false unless ::Rack::Utils.valid_path? path
+      path = ::Rack::Utils.clean_path_info path
 
       paths = [path, "#{path}#{ext}", "#{path}/#{@index}#{ext}"]
 
       if match = paths.detect { |p|
-        path = File.join(@root, p.force_encoding('UTF-8'.freeze))
+        path = File.join(@root, p.force_encoding(Encoding::UTF_8))
         begin
           File.file?(path) && File.readable?(path)
         rescue SystemCallError
@@ -48,7 +46,7 @@ module ActionDispatch
     end
 
     def call(env)
-      serve ActionDispatch::Request.new env
+      serve(Rack::Request.new(env))
     end
 
     def serve(request)
@@ -61,13 +59,13 @@ module ActionDispatch
         if status == 304
           return [status, headers, body]
         end
-        headers['Content-Encoding'] = 'gzip'
-        headers['Content-Type']     = content_type(path)
+        headers["Content-Encoding"] = "gzip"
+        headers["Content-Type"]     = content_type(path)
       else
         status, headers, body = @file_server.call(request.env)
       end
 
-      headers['Vary'] = 'Accept-Encoding' if gzip_path
+      headers["Vary"] = "Accept-Encoding" if gzip_path
 
       return [status, headers, body]
     ensure
@@ -80,11 +78,11 @@ module ActionDispatch
       end
 
       def content_type(path)
-        ::Rack::Mime.mime_type(::File.extname(path), 'text/plain'.freeze)
+        ::Rack::Mime.mime_type(::File.extname(path), "text/plain".freeze)
       end
 
       def gzip_encoding_accepted?(request)
-        request.accept_encoding =~ /\bgzip\b/i
+        request.accept_encoding.any? { |enc, quality| enc =~ /\bgzip\b/i }
       end
 
       def gzip_file_path(path)
@@ -108,16 +106,16 @@ module ActionDispatch
   # produce a directory traversal using this middleware. Only 'GET' and 'HEAD'
   # requests will result in a file being returned.
   class Static
-    def initialize(app, path, cache_control = nil, index: 'index')
+    def initialize(app, path, index: "index", headers: {})
       @app = app
-      @file_handler = FileHandler.new(path, cache_control, index: index)
+      @file_handler = FileHandler.new(path, index: index, headers: headers)
     end
 
     def call(env)
-      req = ActionDispatch::Request.new env
+      req = Rack::Request.new env
 
       if req.get? || req.head?
-        path = req.path_info.chomp('/'.freeze)
+        path = req.path_info.chomp("/".freeze)
         if match = @file_handler.match?(path)
           req.path_info = match
           return @file_handler.serve(req)

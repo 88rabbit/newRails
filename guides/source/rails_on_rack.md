@@ -20,9 +20,9 @@ Introduction to Rack
 
 Rack provides a minimal, modular and adaptable interface for developing web applications in Ruby. By wrapping HTTP requests and responses in the simplest way possible, it unifies and distills the API for web servers, web frameworks, and software in between (the so-called middleware) into a single method call.
 
-* [Rack API Documentation](http://rack.github.io/)
-
-Explaining Rack is not really in the scope of this guide. In case you are not familiar with Rack's basics, you should check out the [Resources](#resources) section below.
+Explaining how Rack works is not really in the scope of this guide. In case you
+are not familiar with Rack's basics, you should check out the [Resources](#resources)
+section below.
 
 Rails on Rack
 -------------
@@ -64,7 +64,7 @@ To use `rackup` instead of Rails' `rails server`, you can put the following insi
 
 ```ruby
 # Rails.root/config.ru
-require ::File.expand_path('../config/environment', __FILE__)
+require_relative 'config/environment'
 run Rails.application
 ```
 
@@ -74,7 +74,7 @@ And start the server:
 $ rackup config.ru
 ```
 
-To find out more about different `rackup` options:
+To find out more about different `rackup` options, you can run:
 
 ```bash
 $ rackup --help
@@ -89,14 +89,15 @@ Action Dispatcher Middleware Stack
 
 Many of Action Dispatcher's internal components are implemented as Rack middlewares. `Rails::Application` uses `ActionDispatch::MiddlewareStack` to combine various internal and external middlewares to form a complete Rails Rack application.
 
-NOTE: `ActionDispatch::MiddlewareStack` is Rails equivalent of `Rack::Builder`, but built for better flexibility and more features to meet Rails' requirements.
+NOTE: `ActionDispatch::MiddlewareStack` is Rails' equivalent of `Rack::Builder`,
+but is built for better flexibility and more features to meet Rails' requirements.
 
 ### Inspecting Middleware Stack
 
-Rails has a handy rake task for inspecting the middleware stack in use:
+Rails has a handy task for inspecting the middleware stack in use:
 
 ```bash
-$ bin/rake middleware
+$ bin/rails middleware
 ```
 
 For a freshly generated Rails application, this might produce something like:
@@ -104,24 +105,22 @@ For a freshly generated Rails application, this might produce something like:
 ```ruby
 use Rack::Sendfile
 use ActionDispatch::Static
-use Rack::Lock
-use #<ActiveSupport::Cache::Strategy::LocalCache::Middleware:0x000000029a0838>
+use ActionDispatch::Executor
+use ActiveSupport::Cache::Strategy::LocalCache::Middleware
 use Rack::Runtime
 use Rack::MethodOverride
 use ActionDispatch::RequestId
 use Rails::Rack::Logger
 use ActionDispatch::ShowExceptions
+use WebConsole::Middleware
 use ActionDispatch::DebugExceptions
 use ActionDispatch::RemoteIp
 use ActionDispatch::Reloader
 use ActionDispatch::Callbacks
 use ActiveRecord::Migration::CheckPending
-use ActiveRecord::ConnectionAdapters::ConnectionManagement
-use ActiveRecord::QueryCache
 use ActionDispatch::Cookies
 use ActionDispatch::Session::CookieStore
 use ActionDispatch::Flash
-use ActionDispatch::ParamsParser
 use Rack::Head
 use Rack::ConditionalGet
 use Rack::ETag
@@ -150,9 +149,9 @@ You can add a new middleware to the middleware stack using any of the following 
 # Push Rack::BounceFavicon at the bottom
 config.middleware.use Rack::BounceFavicon
 
-# Add Lifo::Cache after ActiveRecord::QueryCache.
+# Add Lifo::Cache after ActionDispatch::Executor.
 # Pass { page_cache: false } argument to Lifo::Cache.
-config.middleware.insert_after ActiveRecord::QueryCache, Lifo::Cache, page_cache: false
+config.middleware.insert_after ActionDispatch::Executor, Lifo::Cache, page_cache: false
 ```
 
 #### Swapping a Middleware
@@ -172,18 +171,17 @@ Add the following lines to your application configuration:
 
 ```ruby
 # config/application.rb
-config.middleware.delete "Rack::Lock"
+config.middleware.delete Rack::Runtime
 ```
 
-And now if you inspect the middleware stack, you'll find that `Rack::Lock` is
+And now if you inspect the middleware stack, you'll find that `Rack::Runtime` is
 not a part of it.
 
 ```bash
-$ bin/rake middleware
+$ bin/rails middleware
 (in /Users/lifo/Rails/blog)
 use ActionDispatch::Static
 use #<ActiveSupport::Cache::Strategy::LocalCache::Middleware:0x00000001c304c8>
-use Rack::Runtime
 ...
 run Rails.application.routes
 ```
@@ -192,16 +190,16 @@ If you want to remove session related middleware, do the following:
 
 ```ruby
 # config/application.rb
-config.middleware.delete "ActionDispatch::Cookies"
-config.middleware.delete "ActionDispatch::Session::CookieStore"
-config.middleware.delete "ActionDispatch::Flash"
+config.middleware.delete ActionDispatch::Cookies
+config.middleware.delete ActionDispatch::Session::CookieStore
+config.middleware.delete ActionDispatch::Flash
 ```
 
 And to remove browser related middleware,
 
 ```ruby
 # config/application.rb
-config.middleware.delete "Rack::MethodOverride"
+config.middleware.delete Rack::MethodOverride
 ```
 
 ### Internal Middleware Stack
@@ -214,11 +212,15 @@ Much of Action Controller's functionality is implemented as Middlewares. The fol
 
 **`ActionDispatch::Static`**
 
-* Used to serve static files. Disabled if `config.serve_static_files` is `false`.
+* Used to serve static files from the public directory. Disabled if `config.public_file_server.enabled` is `false`.
 
 **`Rack::Lock`**
 
 * Sets `env["rack.multithread"]` flag to `false` and wraps the application within a Mutex.
+
+**`ActionDispatch::Executor`**
+
+* Used for thread safe code reloading during development.
 
 **`ActiveSupport::Cache::Strategy::LocalCache::Middleware`**
 
@@ -264,14 +266,6 @@ Much of Action Controller's functionality is implemented as Middlewares. The fol
 
 * Checks pending migrations and raises `ActiveRecord::PendingMigrationError` if any migrations are pending.
 
-**`ActiveRecord::ConnectionAdapters::ConnectionManagement`**
-
-* Cleans active connections after each request, unless the `rack.test` key in the request environment is set to `true`.
-
-**`ActiveRecord::QueryCache`**
-
-* Enables the Active Record query cache.
-
 **`ActionDispatch::Cookies`**
 
 * Sets cookies for the request.
@@ -283,10 +277,6 @@ Much of Action Controller's functionality is implemented as Middlewares. The fol
 **`ActionDispatch::Flash`**
 
 * Sets up the flash keys. Only available if `config.action_controller.session_store` is set to a value.
-
-**`ActionDispatch::ParamsParser`**
-
-* Parses out parameters from the request into `params`.
 
 **`Rack::Head`**
 

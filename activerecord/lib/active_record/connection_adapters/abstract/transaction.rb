@@ -33,6 +33,7 @@ module ActiveRecord
 
     class NullTransaction #:nodoc:
       def initialize; end
+      def state; end
       def closed?; true; end
       def open?; false; end
       def joinable?; false; end
@@ -40,7 +41,6 @@ module ActiveRecord
     end
 
     class Transaction #:nodoc:
-
       attr_reader :connection, :state, :records, :savepoint_name
       attr_writer :joinable
 
@@ -100,7 +100,6 @@ module ActiveRecord
     end
 
     class SavepointTransaction < Transaction
-
       def initialize(connection, savepoint_name, options, *args)
         super(connection, options, *args)
         if options[:isolation]
@@ -123,7 +122,6 @@ module ActiveRecord
     end
 
     class RealTransaction < Transaction
-
       def initialize(connection, options, *args)
         super
         if options[:isolation]
@@ -151,49 +149,67 @@ module ActiveRecord
       end
 
       def begin_transaction(options = {})
-        run_commit_callbacks = !current_transaction.joinable?
-        transaction =
-          if @stack.empty?
-            RealTransaction.new(@connection, options, run_commit_callbacks: run_commit_callbacks)
-          else
-            SavepointTransaction.new(@connection, "active_record_#{@stack.size}", options,
-                                     run_commit_callbacks: run_commit_callbacks)
-          end
+        @connection.lock.synchronize do
+          run_commit_callbacks = !current_transaction.joinable?
+          transaction =
+            if @stack.empty?
+              RealTransaction.new(@connection, options, run_commit_callbacks: run_commit_callbacks)
+            else
+              SavepointTransaction.new(@connection, "active_record_#{@stack.size}", options,
+                                       run_commit_callbacks: run_commit_callbacks)
+            end
 
-        @stack.push(transaction)
-        transaction
+          @stack.push(transaction)
+          transaction
+        end
       end
 
       def commit_transaction
-        transaction = @stack.last
-        transaction.before_commit_records
-        @stack.pop
-        transaction.commit
-        transaction.commit_records
+        @connection.lock.synchronize do
+          transaction = @stack.last
+
+          begin
+            transaction.before_commit_records
+          ensure
+            @stack.pop
+          end
+
+          transaction.commit
+          transaction.commit_records
+        end
       end
 
       def rollback_transaction(transaction = nil)
-        transaction ||= @stack.pop
-        transaction.rollback
-        transaction.rollback_records
+        @connection.lock.synchronize do
+          transaction ||= @stack.pop
+          transaction.rollback
+          transaction.rollback_records
+        end
       end
 
       def within_new_transaction(options = {})
-        transaction = begin_transaction options
-        yield
-      rescue Exception => error
-        rollback_transaction if transaction
-        raise
-      ensure
-        unless error
-          if Thread.current.status == 'aborting'
-            rollback_transaction if transaction
-          else
-            begin
-              commit_transaction
-            rescue Exception
-              rollback_transaction(transaction) unless transaction.state.completed?
-              raise
+        @connection.lock.synchronize do
+          begin
+            transaction = begin_transaction options
+            yield
+          rescue Exception => error
+            if transaction
+              rollback_transaction
+              after_failure_actions(transaction, error)
+            end
+            raise
+          ensure
+            unless error
+              if Thread.current.status == "aborting"
+                rollback_transaction if transaction
+              else
+                begin
+                  commit_transaction
+                rescue Exception
+                  rollback_transaction(transaction) unless transaction.state.completed?
+                  raise
+                end
+              end
             end
           end
         end
@@ -208,7 +224,15 @@ module ActiveRecord
       end
 
       private
+
         NULL_TRANSACTION = NullTransaction.new
+
+        # Deallocate invalidated prepared statements outside of the transaction
+        def after_failure_actions(transaction, error)
+          return unless transaction.is_a?(RealTransaction)
+          return unless error.is_a?(ActiveRecord::PreparedStatementCacheExpired)
+          @connection.clear_cache!
+        end
     end
   end
 end

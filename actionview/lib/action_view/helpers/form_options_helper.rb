@@ -1,9 +1,9 @@
-require 'cgi'
-require 'erb'
-require 'action_view/helpers/form_helper'
-require 'active_support/core_ext/string/output_safety'
-require 'active_support/core_ext/array/extract_options'
-require 'active_support/core_ext/array/wrap'
+require "cgi"
+require "erb"
+require "action_view/helpers/form_helper"
+require "active_support/core_ext/string/output_safety"
+require "active_support/core_ext/array/extract_options"
+require "active_support/core_ext/array/wrap"
 
 module ActionView
   # = Action View Form Option Helpers
@@ -268,10 +268,11 @@ module ActionView
       # for more information.)
       #
       # You can also supply an array of ActiveSupport::TimeZone objects
-      # as +priority_zones+, so that they will be listed above the rest of the
-      # (long) list. (You can use ActiveSupport::TimeZone.us_zones as a convenience
-      # for obtaining a list of the US time zones, or a Regexp to select the zones
-      # of your choice)
+      # as +priority_zones+ so that they will be listed above the rest of the
+      # (long) list. You can use ActiveSupport::TimeZone.us_zones for a list
+      # of US time zones, ActiveSupport::TimeZone.country_zones(country_code)
+      # for another country's time zones, or a Regexp to select the zones of
+      # your choice.
       #
       # Finally, this method supports a <tt>:default</tt> option, which selects
       # a default ActiveSupport::TimeZone if the object's time zone is +nil+.
@@ -362,7 +363,7 @@ module ActionView
           html_attributes[:disabled] ||= disabled && option_value_selected?(value, disabled)
           html_attributes[:value] = value
 
-          content_tag_string(:option, text, html_attributes)
+          tag_builder.content_tag_string(:option, text, html_attributes)
         end.join("\n").html_safe
       end
 
@@ -548,7 +549,7 @@ module ActionView
       end
 
       # Returns a string of option tags for pretty much any time zone in the
-      # world. Supply a ActiveSupport::TimeZone name as +selected+ to have it
+      # world. Supply an ActiveSupport::TimeZone name as +selected+ to have it
       # marked as the selected option tag. You can also supply an array of
       # ActiveSupport::TimeZone objects as +priority_zones+, so that they will
       # be listed above the rest of the (long) list. (You can use
@@ -556,7 +557,7 @@ module ActionView
       # of the US time zones, or a Regexp to select the zones of your choice)
       #
       # The +selected+ parameter must be either +nil+, or a string that names
-      # a ActiveSupport::TimeZone.
+      # an ActiveSupport::TimeZone.
       #
       # By default, +model+ is the ActiveSupport::TimeZone constant (which can
       # be obtained in Active Record as a value object). The only requirement
@@ -577,7 +578,7 @@ module ActionView
           end
 
           zone_options.safe_concat options_for_select(convert_zones[priority_zones], selected)
-          zone_options.safe_concat content_tag("option".freeze, '-------------', value: '', disabled: true)
+          zone_options.safe_concat content_tag("option".freeze, "-------------", value: "", disabled: true)
           zone_options.safe_concat "\n"
 
           zones = zones - priority_zones
@@ -644,6 +645,24 @@ module ActionView
       #   collection_radio_buttons(:post, :author_id, Author.all, :id, :name_with_initial) do |b|
       #      b.label(:"data-value" => b.value) { b.radio_button + b.text }
       #   end
+      #
+      # ==== Gotcha
+      #
+      # The HTML specification says when nothing is select on a collection of radio buttons
+      # web browsers do not send any value to server.
+      # Unfortunately this introduces a gotcha:
+      # if a +User+ model has a +category_id+ field and in the form no category is selected, no +category_id+ parameter is sent. So,
+      # any strong parameters idiom like:
+      #
+      #   params.require(:user).permit(...)
+      #
+      # will raise an error since no <tt>{user: ...}</tt> will be present.
+      #
+      # To prevent this the helper generates an auxiliary hidden field before
+      # every collection of radio buttons. The hidden field has the same name as collection radio button and blank value.
+      #
+      # In case if you don't want the helper to generate this hidden field you can specify
+      # <tt>include_hidden: false</tt> option.
       def collection_radio_buttons(object, method, collection, value_method, text_method, options = {}, html_options = {}, &block)
         Tags::CollectionRadioButtons.new(object, method, self, collection, value_method, text_method, options, html_options).render(&block)
       end
@@ -781,7 +800,7 @@ module ActionView
         end
 
         def prompt_text(prompt)
-          prompt.kind_of?(String) ? prompt : I18n.translate('helpers.select.prompt', default: 'Please select')
+          prompt.kind_of?(String) ? prompt : I18n.translate("helpers.select.prompt", default: "Please select")
         end
     end
 

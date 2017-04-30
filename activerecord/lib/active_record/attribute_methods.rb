@@ -1,7 +1,7 @@
-require 'active_support/core_ext/enumerable'
-require 'active_support/core_ext/string/filters'
-require 'mutex_m'
-require 'thread_safe'
+require "active_support/core_ext/enumerable"
+require "active_support/core_ext/string/filters"
+require "mutex_m"
+require "concurrent/map"
 
 module ActiveRecord
   # = Active Record Attribute Methods
@@ -33,30 +33,6 @@ module ActiveRecord
     }
 
     BLACKLISTED_CLASS_METHODS = %w(private public protected allocate new name parent superclass)
-
-    class AttributeMethodCache
-      def initialize
-        @module = Module.new
-        @method_cache = ThreadSafe::Cache.new
-      end
-
-      def [](name)
-        @method_cache.compute_if_absent(name) do
-          safe_name = name.unpack('h*'.freeze).first
-          temp_method = "__temp__#{safe_name}"
-          ActiveRecord::AttributeMethods::AttrNames.set_name_cache safe_name, name
-          @module.module_eval method_body(temp_method, safe_name), __FILE__, __LINE__
-          @module.instance_method temp_method
-        end
-      end
-
-      private
-
-      # Override this method in the subclasses for method body.
-      def method_body(method_name, const_name)
-        raise NotImplementedError, "Subclasses must implement a method_body(method_name, const_name) method."
-      end
-    end
 
     class GeneratedAttributeMethods < Module; end # :nodoc:
 
@@ -96,7 +72,7 @@ module ActiveRecord
         end
       end
 
-      # Raises a <tt>ActiveRecord::DangerousAttributeError</tt> exception when an
+      # Raises an ActiveRecord::DangerousAttributeError exception when an
       # \Active \Record method is defined in the model, otherwise +false+.
       #
       #   class Person < ActiveRecord::Base
@@ -106,7 +82,7 @@ module ActiveRecord
       #   end
       #
       #   Person.instance_method_already_implemented?(:save)
-      #   # => ActiveRecord::DangerousAttributeError: save is defined by ActiveRecord
+      #   # => ActiveRecord::DangerousAttributeError: save is defined by Active Record. Check to make sure that you don't have an attribute or method with the same name.
       #
       #   Person.instance_method_already_implemented?(:name)
       #   # => false
@@ -172,7 +148,7 @@ module ActiveRecord
       #   Person.attribute_method?(:age=)    # => true
       #   Person.attribute_method?(:nothing) # => false
       def attribute_method?(attribute)
-        super || (table_exists? && column_names.include?(attribute.to_s.sub(/=$/, '')))
+        super || (table_exists? && column_names.include?(attribute.to_s.sub(/=$/, "")))
       end
 
       # Returns an array of column names as strings if it's not an abstract class and
@@ -185,10 +161,22 @@ module ActiveRecord
       #   # => ["id", "created_at", "updated_at", "name", "age"]
       def attribute_names
         @attribute_names ||= if !abstract_class? && table_exists?
-            attribute_types.keys
-          else
-            []
-          end
+          attribute_types.keys
+        else
+          []
+        end
+      end
+
+      # Returns true if the given attribute exists, otherwise false.
+      #
+      #   class Person < ActiveRecord::Base
+      #   end
+      #
+      #   Person.has_attribute?('name')   # => true
+      #   Person.has_attribute?(:age)     # => true
+      #   Person.has_attribute?(:nothing) # => false
+      def has_attribute?(attr_name)
+        attribute_types.key?(attr_name.to_s)
       end
 
       # Returns the column object for the named attribute.
@@ -221,13 +209,13 @@ module ActiveRecord
     #   end
     #
     #   person = Person.new
-    #   person.respond_to(:name)    # => true
-    #   person.respond_to(:name=)   # => true
-    #   person.respond_to(:name?)   # => true
-    #   person.respond_to('age')    # => true
-    #   person.respond_to('age=')   # => true
-    #   person.respond_to('age?')   # => true
-    #   person.respond_to(:nothing) # => false
+    #   person.respond_to?(:name)    # => true
+    #   person.respond_to?(:name=)   # => true
+    #   person.respond_to?(:name?)   # => true
+    #   person.respond_to?('age')    # => true
+    #   person.respond_to?('age=')   # => true
+    #   person.respond_to?('age?')   # => true
+    #   person.respond_to?(:nothing) # => false
     def respond_to?(name, include_private = false)
       return false unless super
 
@@ -291,9 +279,8 @@ module ActiveRecord
     # Returns an <tt>#inspect</tt>-like string for the value of the
     # attribute +attr_name+. String attributes are truncated up to 50
     # characters, Date and Time attributes are returned in the
-    # <tt>:db</tt> format, Array attributes are truncated up to 10 values.
-    # Other attributes return the value of <tt>#inspect</tt> without
-    # modification.
+    # <tt>:db</tt> format. Other attributes return the value of
+    # <tt>#inspect</tt> without modification.
     #
     #   person = Person.create!(name: 'David Heinemeier Hansson ' * 3)
     #
@@ -304,7 +291,7 @@ module ActiveRecord
     #   # => "\"2012-10-22 00:15:07\""
     #
     #   person.attribute_for_inspect(:tag_ids)
-    #   # => "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, ...]"
+    #   # => "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]"
     def attribute_for_inspect(attr_name)
       value = read_attribute(attr_name)
 
@@ -312,9 +299,6 @@ module ActiveRecord
         "#{value[0, 50]}...".inspect
       elsif value.is_a?(Date) || value.is_a?(Time)
         %("#{value.to_s(:db)}")
-      elsif value.is_a?(Array) && value.size > 10
-        inspected = value.first(10).inspect
-        %(#{inspected[0...-1]}, ...])
       else
         value.inspect
       end
@@ -346,8 +330,6 @@ module ActiveRecord
     #
     # Note: +:id+ is always present.
     #
-    # Alias for the <tt>read_attribute</tt> method.
-    #
     #   class Person < ActiveRecord::Base
     #     belongs_to :organization
     #   end
@@ -364,7 +346,7 @@ module ActiveRecord
     end
 
     # Updates the attribute identified by <tt>attr_name</tt> with the specified +value+.
-    # (Alias for the protected <tt>write_attribute</tt> method).
+    # (Alias for the protected #write_attribute method).
     #
     #   class Person < ActiveRecord::Base
     #   end
@@ -372,7 +354,7 @@ module ActiveRecord
     #   person = Person.new
     #   person[:age] = '22'
     #   person[:age] # => 22
-    #   person[:age] # => Fixnum
+    #   person[:age].class # => Integer
     def []=(attr_name, value)
       write_attribute(attr_name, value)
     end
@@ -412,65 +394,58 @@ module ActiveRecord
 
     protected
 
-    def clone_attribute_value(reader_method, attribute_name) # :nodoc:
-      value = send(reader_method, attribute_name)
-      value.duplicable? ? value.clone : value
-    rescue TypeError, NoMethodError
-      value
-    end
-
-    def arel_attributes_with_values_for_create(attribute_names) # :nodoc:
-      arel_attributes_with_values(attributes_for_create(attribute_names))
-    end
-
-    def arel_attributes_with_values_for_update(attribute_names) # :nodoc:
-      arel_attributes_with_values(attributes_for_update(attribute_names))
-    end
-
-    def attribute_method?(attr_name) # :nodoc:
-      # We check defined? because Syck calls respond_to? before actually calling initialize.
-      defined?(@attributes) && @attributes.key?(attr_name)
-    end
+      def attribute_method?(attr_name) # :nodoc:
+        # We check defined? because Syck calls respond_to? before actually calling initialize.
+        defined?(@attributes) && @attributes.key?(attr_name)
+      end
 
     private
 
-    # Returns a Hash of the Arel::Attributes and attribute values that have been
-    # typecasted for use in an Arel insert/update method.
-    def arel_attributes_with_values(attribute_names)
-      attrs = {}
-      arel_table = self.class.arel_table
-
-      attribute_names.each do |name|
-        attrs[arel_table[name]] = typecasted_attribute_value(name)
+      def arel_attributes_with_values_for_create(attribute_names)
+        arel_attributes_with_values(attributes_for_create(attribute_names))
       end
-      attrs
-    end
 
-    # Filters the primary keys and readonly attributes from the attribute names.
-    def attributes_for_update(attribute_names)
-      attribute_names.reject do |name|
-        readonly_attribute?(name)
+      def arel_attributes_with_values_for_update(attribute_names)
+        arel_attributes_with_values(attributes_for_update(attribute_names))
       end
-    end
 
-    # Filters out the primary keys, from the attribute names, when the primary
-    # key is to be generated (e.g. the id attribute has no value).
-    def attributes_for_create(attribute_names)
-      attribute_names.reject do |name|
-        pk_attribute?(name) && id.nil?
+      # Returns a Hash of the Arel::Attributes and attribute values that have been
+      # typecasted for use in an Arel insert/update method.
+      def arel_attributes_with_values(attribute_names)
+        attrs = {}
+        arel_table = self.class.arel_table
+
+        attribute_names.each do |name|
+          attrs[arel_table[name]] = typecasted_attribute_value(name)
+        end
+        attrs
       end
-    end
 
-    def readonly_attribute?(name)
-      self.class.readonly_attributes.include?(name)
-    end
+      # Filters the primary keys and readonly attributes from the attribute names.
+      def attributes_for_update(attribute_names)
+        attribute_names.reject do |name|
+          readonly_attribute?(name)
+        end
+      end
 
-    def pk_attribute?(name)
-      name == self.class.primary_key
-    end
+      # Filters out the primary keys, from the attribute names, when the primary
+      # key is to be generated (e.g. the id attribute has no value).
+      def attributes_for_create(attribute_names)
+        attribute_names.reject do |name|
+          pk_attribute?(name) && id.nil?
+        end
+      end
 
-    def typecasted_attribute_value(name)
-      _read_attribute(name)
-    end
+      def readonly_attribute?(name)
+        self.class.readonly_attributes.include?(name)
+      end
+
+      def pk_attribute?(name)
+        name == self.class.primary_key
+      end
+
+      def typecasted_attribute_value(name)
+        _read_attribute(name)
+      end
   end
 end

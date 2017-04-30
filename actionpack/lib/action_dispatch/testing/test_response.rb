@@ -1,3 +1,5 @@
+require "action_dispatch/testing/request_encoder"
+
 module ActionDispatch
   # Integration test methods such as ActionDispatch::Integration::Session#get
   # and ActionDispatch::Integration::Session#post return objects of class
@@ -7,7 +9,12 @@ module ActionDispatch
   # See Response for more information on controller response objects.
   class TestResponse < Response
     def self.from_response(response)
-      new response.status, response.headers, response.body, default_headers: nil
+      new response.status, response.headers, response.body
+    end
+
+    def initialize(*) # :nodoc:
+      super
+      @response_parser = RequestEncoder.parser(content_type)
     end
 
     # Was the response successful?
@@ -18,5 +25,9 @@ module ActionDispatch
 
     # Was there a server-side error?
     alias_method :error?, :server_error?
+
+    def parsed_body
+      @parsed_body ||= @response_parser.call(body)
+    end
   end
 end

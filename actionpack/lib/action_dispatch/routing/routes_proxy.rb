@@ -1,4 +1,4 @@
-require 'active_support/core_ext/array/extract_options'
+require "active_support/core_ext/array/extract_options"
 
 module ActionDispatch
   module Routing
@@ -19,7 +19,8 @@ module ActionDispatch
         end
       end
 
-      def respond_to?(method, include_private = false)
+    private
+      def respond_to_missing?(method, _)
         super || @helpers.respond_to?(method)
       end
 
@@ -32,7 +33,7 @@ module ActionDispatch
               @helpers.#{method}(*args)
             end
           RUBY
-          send(method, *args)
+          public_send(method, *args)
         else
           super
         end

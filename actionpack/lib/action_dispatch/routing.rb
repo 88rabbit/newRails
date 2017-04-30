@@ -1,4 +1,4 @@
-# encoding: UTF-8
+require "active_support/core_ext/string/filters"
 
 module ActionDispatch
   # The routing module provides URL rewriting in native Ruby. It's a way to
@@ -55,7 +55,7 @@ module ActionDispatch
   #     resources :posts, :comments
   #   end
   #
-  # Alternately, you can add prefixes to your path without using a separate
+  # Alternatively, you can add prefixes to your path without using a separate
   # directory by using +scope+. +scope+ takes additional options which
   # apply to all enclosed routes.
   #
@@ -75,13 +75,13 @@ module ActionDispatch
   #   get 'post/:id' => 'posts#show'
   #   post 'post/:id' => 'posts#create_comment'
   #
+  # Now, if you POST to <tt>/posts/:id</tt>, it will route to the <tt>create_comment</tt> action. A GET on the same
+  # URL will route to the <tt>show</tt> action.
+  #
   # If your route needs to respond to more than one HTTP method (or all methods) then using the
   # <tt>:via</tt> option on <tt>match</tt> is preferable.
   #
   #   match 'post/:id' => 'posts#show', via: [:get, :post]
-  #
-  # Now, if you POST to <tt>/posts/:id</tt>, it will route to the <tt>create_comment</tt> action. A GET on the same
-  # URL will route to the <tt>show</tt> action.
   #
   # == Named routes
   #
@@ -91,7 +91,7 @@ module ActionDispatch
   #
   # Example:
   #
-  #   # In routes.rb
+  #   # In config/routes.rb
   #   get '/login' => 'accounts#login', as: 'login'
   #
   #   # With render, redirect_to, tests, etc.
@@ -103,7 +103,7 @@ module ActionDispatch
   #
   # Use <tt>root</tt> as a shorthand to name a route for the root path "/".
   #
-  #   # In routes.rb
+  #   # In config/routes.rb
   #   root to: 'blogs#index'
   #
   #   # would recognize http://www.example.com/ as
@@ -116,15 +116,15 @@ module ActionDispatch
   # Note: when using +controller+, the route is simply named after the
   # method you call on the block parameter rather than map.
   #
-  #   # In routes.rb
+  #   # In config/routes.rb
   #   controller :blog do
   #     get 'blog/show'     => :list
   #     get 'blog/delete'   => :delete
-  #     get 'blog/edit/:id' => :edit
+  #     get 'blog/edit'     => :edit
   #   end
   #
   #   # provides named routes for show, delete, and edit
-  #   link_to @article.title, show_path(id: @article.id)
+  #   link_to @article.title, blog_show_path(id: @article.id)
   #
   # == Pretty URLs
   #
@@ -148,6 +148,7 @@ module ActionDispatch
   #     get 'geocode/:postalcode' => :show, constraints: {
   #       postalcode: /\d{5}(-\d{4})?/
   #     }
+  #   end
   #
   # Constraints can include the 'ignorecase' and 'extended syntax' regular
   # expression modifiers:
@@ -160,7 +161,7 @@ module ActionDispatch
   #
   #   controller 'geocode' do
   #     get 'geocode/:postalcode' => :show, constraints: {
-  #       postalcode: /# Postcode format
+  #       postalcode: /# Postalcode format
   #          \d{5} #Prefix
   #          (-\d{4})? #Suffix
   #          /x
@@ -197,7 +198,7 @@ module ActionDispatch
   #
   #   Rails.application.reload_routes!
   #
-  # This will clear all named routes and reload routes.rb if the file has been modified from
+  # This will clear all named routes and reload config/routes.rb if the file has been modified from
   # last load. To absolutely force reloading, use <tt>reload!</tt>.
   #
   # == Testing Routes
@@ -238,9 +239,9 @@ module ActionDispatch
   #
   # == View a list of all your routes
   #
-  #   rake routes
+  #   rails routes
   #
-  # Target specific controllers by prefixing the command with <tt>CONTROLLER=x</tt>.
+  # Target specific controllers by prefixing the command with <tt>-c</tt> option.
   #
   module Routing
     extend ActiveSupport::Autoload

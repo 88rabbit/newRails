@@ -1,8 +1,8 @@
 module ActiveRecord
   module Type
     module Internal # :nodoc:
-      class AbstractJson < Type::Value # :nodoc:
-        include Type::Helpers::Mutable
+      class AbstractJson < ActiveModel::Type::Value # :nodoc:
+        include ActiveModel::Type::Helpers::Mutable
 
         def type
           :json
@@ -17,10 +17,10 @@ module ActiveRecord
         end
 
         def serialize(value)
-          if value.is_a?(::Array) || value.is_a?(::Hash)
-            ::ActiveSupport::JSON.encode(value)
+          if value.nil?
+            nil
           else
-            value
+            ::ActiveSupport::JSON.encode(value)
           end
         end
 

@@ -15,38 +15,23 @@ module ActiveRecord
 
         when :restrict_with_error
           unless empty?
-            record = klass.human_attribute_name(reflection.name).downcase
-            message = owner.errors.generate_message(:base, :'restrict_dependent_destroy.many', record: record, raise: true) rescue nil
-            if message
-              ActiveSupport::Deprecation.warn(<<-MESSAGE.squish)
-                The error key `:'restrict_dependent_destroy.many'` has been deprecated and will be removed in Rails 5.1.
-                Please use `:'restrict_dependent_destroy.has_many'` instead.
-              MESSAGE
-            end
-            owner.errors.add(:base, message || :'restrict_dependent_destroy.has_many', record: record)
+            record = owner.class.human_attribute_name(reflection.name).downcase
+            owner.errors.add(:base, :'restrict_dependent_destroy.has_many', record: record)
             throw(:abort)
           end
 
+        when :destroy
+          # No point in executing the counter update since we're going to destroy the parent anyway
+          load_target.each { |t| t.destroyed_by_association = reflection }
+          destroy_all
         else
-          if options[:dependent] == :destroy
-            # No point in executing the counter update since we're going to destroy the parent anyway
-            load_target.each { |t| t.destroyed_by_association = reflection }
-            destroy_all
-          else
-            delete_all
-          end
+          delete_all
         end
       end
 
       def insert_record(record, validate = true, raise = false)
         set_owner_attributes(record)
-        set_inverse_instance(record)
-
-        if raise
-          record.save!(:validate => validate)
-        else
-          record.save(:validate => validate)
-        end
+        super
       end
 
       def empty?
@@ -74,7 +59,7 @@ module ActiveRecord
         # the loaded flag is set to true as well.
         def count_records
           count = if reflection.has_cached_counter?
-            owner._read_attribute reflection.counter_cache_column
+            owner._read_attribute(reflection.counter_cache_column).to_i
           else
             scope.count
           end
@@ -82,28 +67,22 @@ module ActiveRecord
           # If there's nothing in the database and @target has no new records
           # we are certain the current target is an empty array. This is a
           # documented side-effect of the method that may avoid an extra SELECT.
-          @target ||= [] and loaded! if count == 0
+          (@target ||= []) && loaded! if count == 0
 
           [association_scope.limit_value, count].compact.min
         end
 
         def update_counter(difference, reflection = reflection())
-          update_counter_in_database(difference, reflection)
-          update_counter_in_memory(difference, reflection)
-        end
-
-        def update_counter_in_database(difference, reflection = reflection())
           if reflection.has_cached_counter?
-            owner.class.update_counters(owner.id, reflection.counter_cache_column => difference)
+            owner.increment!(reflection.counter_cache_column, difference)
           end
         end
 
         def update_counter_in_memory(difference, reflection = reflection())
           if reflection.counter_must_be_updated_by_has_many?
             counter = reflection.counter_cache_column
-            owner[counter] ||= 0
-            owner[counter] += difference
-            owner.send(:clear_attribute_changes, counter) # eww
+            owner.increment(counter, difference)
+            owner.send(:clear_attribute_change, counter) # eww
           end
         end
 
@@ -116,7 +95,7 @@ module ActiveRecord
         end
 
         def delete_or_nullify_all_records(method)
-          count = delete_count(method, self.scope)
+          count = delete_count(method, scope)
           update_counter(-count)
         end
 

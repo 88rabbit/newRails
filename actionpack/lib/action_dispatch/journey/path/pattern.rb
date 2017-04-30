@@ -4,7 +4,7 @@ module ActionDispatch
       class Pattern # :nodoc:
         attr_reader :spec, :requirements, :anchored
 
-        def self.from_string string
+        def self.from_string(string)
           build(string, {}, "/.?", true)
         end
 
@@ -31,6 +31,13 @@ module ActionDispatch
           Visitors::FormatBuilder.new.accept(spec)
         end
 
+        def eager_load!
+          required_names
+          offsets
+          to_regexp
+          nil
+        end
+
         def ast
           @spec.find_all(&:symbol?).each do |node|
             re = @requirements[node.to_sym]
@@ -46,7 +53,7 @@ module ActionDispatch
         end
 
         def names
-          @names ||= spec.grep(Nodes::Symbol).map(&:name)
+          @names ||= spec.find_all(&:symbol?).map(&:name)
         end
 
         def required_names
@@ -54,8 +61,8 @@ module ActionDispatch
         end
 
         def optional_names
-          @optional_names ||= spec.grep(Nodes::Group).flat_map { |group|
-            group.grep(Nodes::Symbol)
+          @optional_names ||= spec.find_all(&:group?).flat_map { |group|
+            group.find_all(&:symbol?)
           }.map(&:name).uniq
         end
 
@@ -98,7 +105,7 @@ module ActionDispatch
           end
 
           def visit_STAR(node)
-            re = @matchers[node.left.to_sym] || '.+'
+            re = @matchers[node.left.to_sym] || ".+"
             "(#{re})"
           end
 
@@ -124,7 +131,7 @@ module ActionDispatch
           end
 
           def captures
-            (length - 1).times.map { |i| self[i + 1] }
+            Array.new(length - 1) { |i| self[i + 1] }
           end
 
           def [](x)
@@ -175,7 +182,7 @@ module ActionDispatch
 
               if @requirements.key?(node)
                 re = /#{@requirements[node]}|/
-                @offsets.push((re.match('').length - 1) + @offsets.last)
+                @offsets.push((re.match("").length - 1) + @offsets.last)
               else
                 @offsets << @offsets.last
               end
